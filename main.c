@@ -2,10 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <cassandra.h>
 #include "config.h"
 
-#include "include/cassandra.h"
-#include <cassandra.h>
 
 void nextarg(char *ln, int *pos, char *sep, char *arg);
 char *readline(char *prompt);
@@ -34,12 +33,12 @@ cli_show(CassSession* SES)
 {
 	const char * query = "SELECT keyspace_name FROM system_schema.keyspaces;";
 	CassStatement* statement = cass_statement_new(query,0);
-	ClassFuture* query_future = cass_session_execute(SES,statement);
+	CassFuture* query_future = cass_session_execute(SES,statement);
 
 	if(cass_future_error_code(query_future) == CASS_OK)
 	{
 		const CassResult* result = cass_future_get_result(query_future);
-		ClassIterator* rows = cass_iterator_from_result(result);
+		CassIterator* rows = cass_iterator_from_result(result);
 	
 		while(cass_iterator_next(rows))
 		{
@@ -85,12 +84,12 @@ cli_list(CassSession* SES)
 	const char *query = buf;
 	
 	CassStatement* statement = cass_statement_new(query,0);
-	ClassFuture* query_future = cass_session_execute(SES,statement);
+	CassFuture* query_future = cass_session_execute(SES,statement);
 
 	if(cass_future_error_code(query_future) == CASS_OK)
 	{
 		const CassResult* result = cass_future_get_result(query_future);
-		ClassIterator* rows_iterator = cass_iterator_from_result(result);
+		CassIterator* rows_iterator = cass_iterator_from_result(result);
 	
 		while(cass_iterator_next(rows_iterator))
 		{
@@ -135,13 +134,13 @@ cli_get(CassSession* SES,char *query)
 {
 	
 	CassStatement* statement = cass_statement_new(query,0);
-	ClassFuture* query_future = cass_session_execute(SES,statement);
+	CassFuture* query_future = cass_session_execute(SES,statement);
 
 	if(cass_future_error_code(query_future) == CASS_OK)
 	{
 		const CassResult* result = cass_future_get_result(query_future);
-		ClassIterator* rows_iterator = cass_iterator_from_result(result);
-	
+		CassIterator* rows_iterator = cass_iterator_from_result(result);
+		
 		while(cass_iterator_next(rows_iterator))
 		{
 		
@@ -157,7 +156,7 @@ cli_get(CassSession* SES,char *query)
 
 
 		cass_result_free(result);
-		cass_iterator_free(rows);
+		cass_iterator_free(rows_iterator);
 	} 
 	else {
       
@@ -177,8 +176,8 @@ return;
 static void 
 cli_insert(CassSession* SES,char  *query)
 {
-	CassStatment* statment = class_statment_new(query,0);
-	ClassFuture* query_future = cass_session_execute(SES,statement);
+	CassStatement* statement = cass_statement_new(query,0);
+	CassFuture* query_future = cass_session_execute(SES,statement);
  
 	cass_statement_free(statement);
 	 
@@ -231,7 +230,7 @@ cli(CassSession* SES)
 		}
 
 		if ( (strcmp(cmdline, "list") || strcmp(cmdline, "LIST") )  == 0) {
-
+			puts("In LIST");
 			if(KEYSPACE == NULL)
 			{
 
@@ -249,7 +248,7 @@ cli(CassSession* SES)
 			continue;
 		}
 
-		if (strncmp(cmdline, "use ",4) == 0) {
+		if (strcmp(cmdline, "use") == 0) {
 			/*
 			char* token_use;
 			
@@ -314,7 +313,7 @@ cli(CassSession* SES)
 
 			//puts(query);
 			//CassString insert_query  =  cass_string_init("INSERT INTO example (key, value) VALUES (?, ?);");
- 			cli_insert(SES,query_insert)
+ 			cli_insert(SES,query_insert);
 			}
 			
 
@@ -378,7 +377,7 @@ main(int argc, char**argv)
 	
   	connect_future = cass_session_connect(session, cluster);
 	
-	if(cross_future_error_code(connect_future) == CASS_OK)
+	if(cass_future_error_code(connect_future) == CASS_OK)
 	{
 	cli(session);
 	}
