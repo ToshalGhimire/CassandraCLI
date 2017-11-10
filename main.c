@@ -3,6 +3,8 @@
 #include <string.h>
 #include <unistd.h>
 #include "config.h"
+
+#include "include/cassandra.h"
 #include <cassandra.h>
 
 void nextarg(char *ln, int *pos, char *sep, char *arg);
@@ -10,8 +12,8 @@ char *readline(char *prompt);
 
 static int tty = 0;
 
-char *Keyspace = NULL;
-char *table = NULL;
+char *KEYSPACE = NULL;
+char *TABLE = NULL;
 
 
 static void
@@ -60,7 +62,7 @@ cli_show(CassSession* SES)
       
       	const char* message;
       	size_t message_length;
-      	cass_future_error_message(result_future, &message, &message_length);
+      	cass_future_error_message(query_future, &message, &message_length);
       	fprintf(stderr, "Unable to run query: '%.*s'\n", (int)message_length, message);
 
 	}
@@ -71,14 +73,14 @@ return;
 }
 
 static void 
-cli_list(CassSession* SES,char *key_to_list)
+cli_list(CassSession* SES)
 {
 	char *base_string = "select table_name from system_schema.tables where keyspace_name = '";
 	char buf[1024];
 
 	strcpy(buf,base_string);
-	strcat(buf,key_to_list);
-	strcat(buf,"';")
+	strcat(buf,KEYSPACE);
+	strcat(buf,"';");
 
 	const char *query = buf;
 	
@@ -105,13 +107,13 @@ cli_list(CassSession* SES,char *key_to_list)
 
 
 		cass_result_free(result);
-		cass_iterator_free(rows);
+		cass_iterator_free(rows_iterator);
 	} 
 	else {
       
       	const char* message;
       	size_t message_length;
-      	cass_future_error_message(result_future, &message, &message_length);
+      	cass_future_error_message(query_future, &message, &message_length);
       	fprintf(stderr, "Unable to run query: '%.*s'\n", (int)message_length, message);
 
 	}
@@ -138,12 +140,12 @@ cli_get(CassSession* SES,char *query)
 	if(cass_future_error_code(query_future) == CASS_OK)
 	{
 		const CassResult* result = cass_future_get_result(query_future);
-		ClassIterator* rows = cass_iterator_from_result(result);
+		ClassIterator* rows_iterator = cass_iterator_from_result(result);
 	
-		while(cass_iterator_next(rows))
+		while(cass_iterator_next(rows_iterator))
 		{
 		
-		 const CassRow* row = cass_iterator_get_row(rows);
+		 const CassRow* row = cass_iterator_get_row(rows_iterator);
        		 const CassValue* value = cass_row_get_column_by_name(row, "first_name");
 
         	const char* keyspace_name;
@@ -161,7 +163,7 @@ cli_get(CassSession* SES,char *query)
       
       	const char* message;
       	size_t message_length;
-      	cass_future_error_message(result_future, &message, &message_length);
+      	cass_future_error_message(query_future, &message, &message_length);
       	fprintf(stderr, "Unable to run query: '%.*s'\n", (int)message_length, message);
 
 	}
@@ -173,8 +175,19 @@ return;
 }
 
 static void 
-cli_insert()
+cli_insert(CassSession* SES,char  *query)
 {
+	CassStatment* statment = class_statment_new(query,0);
+	ClassFuture* query_future = cass_session_execute(SES,statement);
+ 
+	cass_statement_free(statement);
+	 
+	CassError rc = cass_future_error_code(query_future);
+	 
+	printf("Query : %s\n", cass_error_desc(rc));
+ 
+	cass_future_free(query_future);
+
 	return;
 }
 
@@ -219,14 +232,14 @@ cli(CassSession* SES)
 
 		if ( (strcmp(cmdline, "list") || strcmp(cmdline, "LIST") )  == 0) {
 
-			if(keyspace == NULL)
+			if(KEYSPACE == NULL)
 			{
 
-			puts("Please specify keyspace first using the USE command")
+			puts("Please specify keyspace first using the USE command");
 
 			}else{
 
-			cli_show(SES,keyspace);
+			cli_list(SES);
 			continue;
 			}
 		}		
@@ -236,46 +249,105 @@ cli(CassSession* SES)
 			continue;
 		}
 
-		if (strcmp(cmdline, "use ",4) == 0) {
+		if (strncmp(cmdline, "use ",4) == 0) {
+			/*
 			char* token_use;
 			
 			token_use = strtok(cmdline + 4, ".");
-			keyspace = token_use;
+			KEYSPACE = token_use;
 			
 			token_use = strtok(NULL, ".");
-			table = token_use;
+			TABLE = token_use;
+			*/
 			
+			printf("Enter keyspace: ");
+			char key_use[30];
+			scanf("%s",key_use);
+			printf("Enter table: ");
+			char table_use[30];
+			scanf("%s",table_use);
+			
+			KEYSPACE = key_use;
+			TABLE = table_use;
+						
 			
 			continue;
 		}
+		
+		if (strcmp(cmdline, "insert") == 0) {
+			
+			if(KEYSPACE == NULL){
+			
+			puts("Please specify keyspace first using the USE command");
+			
+			}else if (TABLE == NULL){
 
-		if (strcmp(cmdline, "get ",4) == 0) {
+			puts("Please specify table first using the USE command");
+	
+			}else{
+
+			
+			printf("Enter key: ");
+			char key[30];
+			scanf("%s",key);
+			printf("Enter value: ");
+			char value[30];
+			scanf("%s",value);
+			
+			//constructing a query to this format :: insert into keyspace.table (key) values(value)
+			char *insert = "insert into ";
+			char *valueSTR = ") values ('";
+
+			char buf_insert[1024];
+
+			strcpy(buf_insert, insert);			//insert into 
+			strcat(buf_insert,KEYSPACE);	//insert into KEYSPACE 
+			strcat(buf_insert,".");			//insert into KEYSPACE. 
+			strcat(buf_insert,TABLE);		//insert into KEYSPACE.TABLE 
+			strcat(buf_insert," (");			//insert into KEYSPACE.TABLE (
+			strcat(buf_insert,key);			//insert into KEYSPACE.TABLE (key
+			strcat(buf_insert,valueSTR);		//insert into KEYSPACE.TABLE (key) values ('
+			strcat(buf_insert,value);			//insert into KEYSPACE.TABLE (key) values ('value
+			strcat(buf_insert,"');");			//insert into KEYSPACE.TABLE (key) values ('value');
+
+			char *query_insert = buf_insert;
+
+			//puts(query);
+			//CassString insert_query  =  cass_string_init("INSERT INTO example (key, value) VALUES (?, ?);");
+ 			cli_insert(SES,query_insert)
+			}
+			
+
+			
+				
+			continue;
+		}
+
+		if (strcmp(cmdline, "get") == 0) {
 			char* select = "select * from ";
 			char* where = " where userid ='";
 			char* last ="';";
 			
-			char buf[1024];
+			char buf_get[1024];
+			printf("Enter key: ");
+			char key_get[30];
+			scanf("%s",key_get);
 
-			strcpy(buf,select);
-
-			strcat(buf,keyspace);
-			strcat(buf,".");
-			strcat(buf,table);
-
-			strcat(buf,where);
-
-			char* token_get;
 			
-			token_get = strtok(cmdline + 4, " ");
+			strcpy(buf_get,select); 		//select * from
+			strcat(buf_get,KEYSPACE); 	//select * from keyspace
+			strcat(buf_get,".");			//select * from keyspace.
+			strcat(buf_get,TABLE);		//select * from keyspace.table
+			strcat(buf_get,where);		//select * from keyspace.table where userid = '
+			strcat(buf_get,key_get);		//select * from keyspace.table where userid = 'scanf(key_get)
+			strcat(buf_get,last);			//select * from keyspace.table where userid = 'scanf(key_get)';
 			
 			
-			strcat(buf,token_get);
-			strcat(buf,"';")
-			
-			const char* query_use = buf;
+			const char* query_use = buf_get;
 
-			cli_use(SES,query);
+			cli_get(SES,query_use);
 			continue;
+			
 		}		
 		
 		if (strcmp(cmdline, "quit") == 0 ||
@@ -308,11 +380,12 @@ main(int argc, char**argv)
 	
 	if(cross_future_error_code(connect_future) == CASS_OK)
 	{
-	//run query 
-	}//else error
+	cli(session);
+	}
+	//else error
 
 	
-	cli(session);
+	//cli(session);
 	
 
 	cass_future_free(connect_future);
